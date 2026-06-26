@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-pymongo
+pymongo[srv]
 python-dotenv
 google-auth
 google-auth-oauthlib
