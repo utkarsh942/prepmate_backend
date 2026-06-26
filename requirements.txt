@@ -12,3 +12,4 @@ bcrypt
 passlib
 httpx
 python-multipart
+PyMuPDF
