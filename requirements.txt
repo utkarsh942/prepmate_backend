@@ -5,7 +5,7 @@ python-dotenv
 google-auth
 google-auth-oauthlib
 google-generativeai
-pydantic
+pydantic[email]
 pydantic-settings
 PyJWT
 bcrypt
