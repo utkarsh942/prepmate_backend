@@ -1,36 +1,43 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from typing import List
 from datetime import datetime
 from app.database.db import db
 from app.dependencies.auth_dependencies import get_current_user
 
 router = APIRouter()
 
+
+class QuizSubmission(BaseModel):
+    note_id: str
+    total_questions: int
+    correct_answers: int
+    time_spent_seconds: int
+    per_question_time: List[int] = []
+
+
 @router.post("/submit-quiz")
 def submit_quiz_results(
-    note_id : str,
-    total_questions : int,
-    correct_answers : int,
-    time_spent_seconds: int,
-    per_question_time: list[int], 
+    data: QuizSubmission,
     current_user: dict = Depends(get_current_user)
 ):
-    incorrect_answers = total_questions - correct_answers
+    incorrect_answers = data.total_questions - data.correct_answers
 
     accuracy = 0.0
-    if(total_questions> 0):
-        accuracy = round((correct_answers/total_questions)*100,2)
+    if data.total_questions > 0:
+        accuracy = round((data.correct_answers / data.total_questions) * 100, 2)
 
     attempt_document = {
-            "user_id": current_user["user_id"],
-            "note_id": note_id,
-            "attempted_at": datetime.utcnow(),
-            "total_questions": total_questions,
-            "correct_answers": correct_answers,
-            "incorrect_answers": incorrect_answers,
-            "accuracy": accuracy,
-            "time_spent_seconds": time_spent_seconds,
-            "per_question_time": per_question_time
-        }
+        "user_id": current_user["user_id"],
+        "note_id": data.note_id,
+        "attempted_at": datetime.utcnow(),
+        "total_questions": data.total_questions,
+        "correct_answers": data.correct_answers,
+        "incorrect_answers": incorrect_answers,
+        "accuracy": accuracy,
+        "time_spent_seconds": data.time_spent_seconds,
+        "per_question_time": data.per_question_time
+    }
 
     result = db["quiz_attempts"].insert_one(attempt_document)
     return {

@@ -197,7 +197,6 @@ def update_note(
 
     }
 @router.get("/search-notes")
-@router.get("/search-notes")
 def search_notes(
 
     query: str,
@@ -259,6 +258,8 @@ def search_notes(
 @router.get("/generate-quiz/{note_id}")
 def generate_note_quiz(
     note_id: str,
+    num_questions: int = Query(5, description="Number of questions"),
+    difficulty: str = Query("medium", description="Difficulty: easy, medium, hard"),
     current_user: dict = Depends(get_current_user)
 ):
     # Find the note and ensure it belongs to the logged-in user
@@ -270,12 +271,16 @@ def generate_note_quiz(
     if not note:
         return {"message": "Note not found"}
 
-    # OPTIMIZATION: If quiz was already generated before, return it instantly from DB!
-    if "generated_quiz" in note and note["generated_quiz"]:
-        return {
-            "quiz": note["generated_quiz"],
-            "source": "database"
-        }
+    # Use cache only when using default settings
+    is_default = (num_questions == 5 and difficulty == "medium")
+    if is_default and "generated_quiz" in note and note["generated_quiz"]:
+        cached = note["generated_quiz"]
+        # Handle legacy string format — regenerate if cached data is a string
+        if isinstance(cached, list) and len(cached) > 0:
+            return {
+                "questions": cached,
+                "source": "database"
+            }
 
     extracted_text = note.get("extracted_text", "").strip()
 
@@ -286,21 +291,22 @@ def generate_note_quiz(
     truncated_text = " ".join(extracted_text.split()[:12000])
 
     try:
-        # Call the updated Gemini utility
-        quiz = generate_quiz(truncated_text)
+        # Call the updated Gemini utility with config
+        questions = generate_quiz(truncated_text, num_questions=num_questions, difficulty=difficulty)
 
-        # OPTIMIZATION: Cache it back into the note document inside MongoDB
-        db["notes"].update_one(
-            {"_id": ObjectId(note_id)},
-            {"$set": {"generated_quiz": quiz}}
-        )
+        # Cache default quiz results back into MongoDB
+        if is_default:
+            db["notes"].update_one(
+                {"_id": ObjectId(note_id)},
+                {"$set": {"generated_quiz": questions}}
+            )
 
         return {
-            "quiz": quiz,
+            "questions": questions,
             "source": "generated_now"
         }
     except Exception as e:
-        return {"message": f"Gemini Error: {str(e)}"}
+        return {"message": f"Quiz Generation Error: {str(e)}"}
 
 
 @router.get("/generate-summary/{note_id}")
