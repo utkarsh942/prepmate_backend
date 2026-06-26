@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 from app.database.db import db
 from app.utils.jwt_handler import create_access_token
 import os
@@ -21,31 +23,25 @@ async def google_login(data: GoogleLoginRequest):
     Frontend sends the credential token from Google Identity Services.
     """
     try:
-        from google.oauth2 import id_token
-        from google.auth.transport import requests as google_requests
-
         client_id = os.getenv("GOOGLE_CLIENT_ID", "")
-        print(f"[DEBUG AUTH] GOOGLE_CLIENT_ID in env: {client_id}")
 
         if not client_id:
-            print("[DEBUG AUTH] Error: Google Client ID not configured in backend .env")
             raise HTTPException(
                 status_code=500,
                 detail="Google Client ID not configured on server"
             )
 
-        print(f"[DEBUG AUTH] Verifying token (length: {len(data.token)})")
         # Verify the token using Google's official library
         idinfo = id_token.verify_oauth2_token(
             data.token,
             google_requests.Request(),
-            client_id
+            client_id,
+            clock_skew_in_seconds=10
         )
 
         email = idinfo.get("email")
-        name = idinfo.get("name", "")
+        name = idinfo.get("name", idinfo.get("given_name", ""))
         email_verified = idinfo.get("email_verified", False)
-        print(f"[DEBUG AUTH] Official library verified email: {email}, verified: {email_verified}")
 
         if not email:
             raise HTTPException(status_code=401, detail="Google token missing email")
@@ -56,32 +52,28 @@ async def google_login(data: GoogleLoginRequest):
     except HTTPException:
         raise
     except ValueError as e:
-        print(f"[DEBUG AUTH] ValueError in verify_oauth2_token: {str(e)}")
         raise HTTPException(status_code=401, detail=f"Invalid Google token: {str(e)}")
-    except Exception as e:
-        print(f"[DEBUG AUTH] Exception in verify_oauth2_token: {type(e).__name__}: {str(e)}. Falling back to tokeninfo endpoint...")
-        # Fallback: try the tokeninfo endpoint if google-auth library is not available
+    except Exception:
+        # Fallback: try the tokeninfo endpoint if google-auth library fails
         import httpx
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     f"https://oauth2.googleapis.com/tokeninfo?id_token={data.token}"
                 )
-            
-            print(f"[DEBUG AUTH] Tokeninfo fallback response status: {resp.status_code}")
+
             if resp.status_code != 200:
-                print(f"[DEBUG AUTH] Tokeninfo fallback failed: {resp.text}")
                 raise HTTPException(status_code=401, detail="Invalid Google token")
 
             idinfo = resp.json()
             email = idinfo.get("email")
-            name = idinfo.get("name", "")
-            print(f"[DEBUG AUTH] Tokeninfo fallback verified email: {email}")
+            name = idinfo.get("name", idinfo.get("given_name", ""))
 
             if not email:
                 raise HTTPException(status_code=401, detail="Google token missing email")
+        except HTTPException:
+            raise
         except Exception as fallback_err:
-            print(f"[DEBUG AUTH] Fallback exception: {type(fallback_err).__name__}: {str(fallback_err)}")
             raise HTTPException(status_code=401, detail=f"Google authentication failed: {str(fallback_err)}")
 
     # Check if user already exists
@@ -113,6 +105,7 @@ async def google_login(data: GoogleLoginRequest):
 
     return {
         "access_token": token,
+        "user_id": user_id,
         "message": "Google login successful",
         "user": {
             "full_name": name,

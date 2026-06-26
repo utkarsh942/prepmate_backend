@@ -357,6 +357,7 @@ def generate_note_summary(
 @router.get("/generate-flashcards/{note_id}")
 def generate_note_flashcards(
     note_id: str,
+    num_cards: int = Query(5, description="Number of flashcards"),
     current_user: dict = Depends(get_current_user)
 ):
     # 1. Find the note and verify ownership
@@ -369,11 +370,15 @@ def generate_note_flashcards(
         return {"message": "Note not found"}
 
     # 2. Database Caching: If flashcards already exist, return them directly
-    if "flashcards" in note and note["flashcards"]:
-        return {
-            "flashcards": note["flashcards"],
-            "source": "database"
-        }
+    is_default = (num_cards == 5)
+    if is_default and "flashcards" in note and note["flashcards"]:
+        cached = note["flashcards"]
+        # Ensure cached format is a list (JSON array), not the old plain text string
+        if isinstance(cached, list) and len(cached) > 0:
+            return {
+                "flashcards": cached,
+                "source": "database"
+            }
 
     extracted_text = note.get("extracted_text", "").strip()
     if not extracted_text:
@@ -384,13 +389,14 @@ def generate_note_flashcards(
 
     try:
         # 3. Call our new helper function
-        flashcards = generate_flashcards(truncated_text)
+        flashcards = generate_flashcards(truncated_text, num_cards=num_cards)
 
         # 4. Save the flashcards to MongoDB so we don't hit the API twice
-        db["notes"].update_one(
-            {"_id": ObjectId(note_id)},
-            {"$set": {"flashcards": flashcards}}
-        )
+        if is_default:
+            db["notes"].update_one(
+                {"_id": ObjectId(note_id)},
+                {"$set": {"flashcards": flashcards}}
+            )
 
         return {
             "flashcards": flashcards,

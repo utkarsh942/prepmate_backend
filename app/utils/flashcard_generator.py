@@ -12,18 +12,41 @@ model = genai.GenerativeModel(
     "gemini-2.5-flash"
 )
 
-def generate_flashcards(note_text):
-    prompt = f"""
-    Generate 5 study flashcards from the following notes. 
-    Each flashcard must have a Front (Question or Concept) and a Back (Answer or Explanation).
+import json
+import re
 
-    Notes:
-    {note_text}
+def generate_flashcards(note_text, num_cards=5):
+    prompt = f"""Generate {num_cards} study flashcards from the following notes. 
+Each flashcard must have a "front" (Question or Concept) and a "back" (Answer or Explanation).
 
-    Format exactly like this:
-    Front: [Insert question/concept here]
-    Back: [Insert answer/explanation here]
-    """
+You MUST respond with ONLY a valid JSON array. No markdown, no code fences, no explanation — ONLY the JSON array.
+
+Example format:
+[
+  {{
+    "front": "What is Photosynthesis?",
+    "back": "The process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar."
+  }}
+]
+
+Notes:
+{note_text}
+"""
     
     response = model.generate_content(prompt)
-    return response.text
+    raw_text = response.text.strip()
+
+    # Strip markdown code fences if present
+    raw_text = re.sub(r'^```(?:json)?\s*', '', raw_text)
+    raw_text = re.sub(r'\s*```$', '', raw_text)
+    raw_text = raw_text.strip()
+
+    try:
+        flashcards = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse flashcards JSON from AI response: {e}")
+
+    if not isinstance(flashcards, list):
+        raise ValueError("AI response is not a JSON array")
+
+    return flashcards

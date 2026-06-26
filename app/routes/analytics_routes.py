@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
+from bson import ObjectId
+from bson.errors import InvalidId
 from app.database.db import db
 from app.dependencies.auth_dependencies import get_current_user
 
@@ -46,15 +48,19 @@ def submit_quiz_results(
         "attempt_id": str(result.inserted_id)
     }
 
-from bson import ObjectId
 
 @router.get("/quiz-analytics/{attempt_id}")
 def get_specific_quiz_analytics(
     attempt_id: str,
     current_user: dict = Depends(get_current_user)
 ):
+    try:
+        obj_id = ObjectId(attempt_id)
+    except (InvalidId, Exception):
+        raise HTTPException(status_code=400, detail="Invalid attempt ID format")
+
     attempt = db["quiz_attempts"].find_one({
-        "_id": ObjectId(attempt_id),
+        "_id": obj_id,
         "user_id": current_user["user_id"]
     })
 
@@ -63,11 +69,13 @@ def get_specific_quiz_analytics(
 
     attempt["_id"] = str(attempt["_id"])
     attempt["attempted_at"] = str(attempt["attempted_at"])
-    
+
     return attempt
+
+
 @router.get("/test-analytics")
 def get_dashboard_analytics(current_user: dict = Depends(get_current_user)):
-   
+
     attempts = list(db["quiz_attempts"].find({"user_id": current_user["user_id"]}))
 
     if not attempts:
@@ -78,10 +86,12 @@ def get_dashboard_analytics(current_user: dict = Depends(get_current_user)):
             "overall_incorrect": 0,
             "average_accuracy": 0.0,
             "average_time_per_quiz_seconds": 0,
+            "study_streak": 0,
+            "weekly_activity": [],
+            "accuracy_trend": [],
             "recent_attempts": []
         }
 
-   
     total_quizzes = len(attempts)
     total_questions = 0
     total_correct = 0
@@ -89,7 +99,6 @@ def get_dashboard_analytics(current_user: dict = Depends(get_current_user)):
     sum_accuracy = 0.0
     total_time_spent = 0
 
-    
     for attempt in attempts:
         total_questions += attempt.get("total_questions", 0)
         total_correct += attempt.get("correct_answers", 0)
@@ -100,9 +109,62 @@ def get_dashboard_analytics(current_user: dict = Depends(get_current_user)):
         attempt["_id"] = str(attempt["_id"])
         attempt["attempted_at"] = str(attempt["attempted_at"])
 
-   
     avg_accuracy = round(sum_accuracy / total_quizzes, 2)
     avg_time_per_quiz = round(total_time_spent / total_quizzes)
+
+    # --- Study Streak: consecutive days with quiz attempts ---
+    attempt_dates = set()
+    for attempt in attempts:
+        try:
+            dt = datetime.fromisoformat(attempt["attempted_at"])
+            attempt_dates.add(dt.date())
+        except (ValueError, TypeError):
+            pass
+
+    study_streak = 0
+    if attempt_dates:
+        today = datetime.utcnow().date()
+        current_date = today
+        # Allow streak to start from today or yesterday
+        if current_date not in attempt_dates:
+            current_date = today - timedelta(days=1)
+        while current_date in attempt_dates:
+            study_streak += 1
+            current_date -= timedelta(days=1)
+
+    # --- Weekly Activity: last 7 days, count of quizzes per day ---
+    today = datetime.utcnow().date()
+    weekly_activity = []
+    
+    # Extract all attempt dates as list to properly count duplicates
+    all_attempt_dates = []
+    for attempt in attempts:
+        try:
+            dt = datetime.fromisoformat(attempt["attempted_at"])
+            all_attempt_dates.append(dt.date())
+        except (ValueError, TypeError):
+            pass
+
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        count = sum(1 for d in all_attempt_dates if d == day)
+        weekly_activity.append({
+            "date": str(day),
+            "quizzes": count
+        })
+
+    # --- Accuracy Trend: last 10 quiz accuracies ---
+    sorted_attempts = sorted(
+        attempts,
+        key=lambda a: a.get("attempted_at", "")
+    )
+    accuracy_trend = [
+        {
+            "attempted_at": a["attempted_at"],
+            "accuracy": a.get("accuracy", 0.0)
+        }
+        for a in sorted_attempts[-10:]
+    ]
 
     return {
         "total_quizzes_taken": total_quizzes,
@@ -111,6 +173,8 @@ def get_dashboard_analytics(current_user: dict = Depends(get_current_user)):
         "overall_incorrect": total_incorrect,
         "average_accuracy": avg_accuracy,
         "average_time_per_quiz_seconds": avg_time_per_quiz,
-        "recent_attempts": attempts[::-1] 
+        "study_streak": study_streak,
+        "weekly_activity": weekly_activity,
+        "accuracy_trend": accuracy_trend,
+        "recent_attempts": attempts[::-1]
     }
-
