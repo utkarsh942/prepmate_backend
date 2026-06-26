@@ -7,7 +7,7 @@ google-auth-oauthlib
 google-generativeai
 pydantic[email]
 pydantic-settings
-PyJWT
+python-jose
 bcrypt
 passlib
 httpx
