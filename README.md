@@ -2,7 +2,7 @@
 
 The backend for PrepMate, an AI-powered study platform that automatically converts your PDF notes into interactive quizzes, flashcards, and summaries.
 
-## 🚀 Tech Stack
+##  Tech Stack
 
 - **Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Python)
 - **Database:** MongoDB (Atlas)
@@ -10,7 +10,7 @@ The backend for PrepMate, an AI-powered study platform that automatically conver
 - **Authentication:** Google OAuth 2.0 & JWT (JSON Web Tokens)
 - **PDF Processing:** PyMuPDF (`fitz`)
 
-## 🔑 Key Features
+##  Key Features
 
 - **Google Authentication:** Secure login using Google Identity Services.
 - **PDF Extraction:** Efficiently extracts text from uploaded PDF documents.
@@ -21,7 +21,7 @@ The backend for PrepMate, an AI-powered study platform that automatically conver
 - **User Analytics:** Tracks quiz attempts, scores, and weekly activity.
 - **Caching Mechanism:** Saves generated AI content to MongoDB to reduce API calls and improve load times.
 
-## 🛠️ Local Development Setup
+##  Local Development Setup
 
 ### Prerequisites
 - Python 3.9+
@@ -63,7 +63,7 @@ The backend for PrepMate, an AI-powered study platform that automatically conver
    ```
    The API will be available at `http://localhost:8000`. You can view the interactive API documentation at `http://localhost:8000/docs`.
 
-## ☁️ Deployment
+##  Deployment
 
 This backend is configured for easy deployment on platforms like **Render**.
 - Uses `uvicorn app.main:app --host 0.0.0.0 --port $PORT` as the start command.
